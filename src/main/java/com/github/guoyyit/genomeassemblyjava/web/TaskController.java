@@ -2,10 +2,13 @@ package com.github.guoyyit.genomeassemblyjava.web;
 
 import com.github.guoyyit.genomeassemblyjava.model.AssemblyConfig;
 import com.github.guoyyit.genomeassemblyjava.model.AssemblyResult;
+import com.github.guoyyit.genomeassemblyjava.model.BatchReceipt;
 import com.github.guoyyit.genomeassemblyjava.model.ReadBatch;
+import com.github.guoyyit.genomeassemblyjava.model.ReadValidation;
 import com.github.guoyyit.genomeassemblyjava.model.TaskSnapshot;
 import com.github.guoyyit.genomeassemblyjava.service.AssemblyTask;
 import com.github.guoyyit.genomeassemblyjava.service.TaskManager;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,10 +18,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
- * 组装任务 REST 接口。
+ * 组装任务 REST 接口。所有路径与请求结构保持向后兼容：
+ * POST /api/tasks、GET /api/tasks、GET /api/tasks/{id}、
+ * POST /api/tasks/{id}/batches、POST /api/tasks/{id}/assemble、
+ * GET /api/tasks/{id}/result。
  */
 @RestController
 @RequestMapping("/api/tasks")
@@ -31,36 +36,58 @@ public class TaskController {
     }
 
     @PostMapping
-    public ResponseEntity<TaskSnapshot> createTask(@RequestBody(required = false) AssemblyConfig config) {
-        return null;
+    public ResponseEntity<TaskSnapshot> createTask(
+            @RequestBody(required = false) CreateTaskRequest request) {
+        AssemblyConfig config = (request == null ? new CreateTaskRequest(null, null, null, null, null)
+                : request).toConfig();
+        AssemblyTask task = taskManager.createTask(null, config);
+        return ResponseEntity.status(HttpStatus.CREATED).body(task.snapshot());
     }
 
     @GetMapping
     public List<TaskSnapshot> listTasks() {
-        return List.of();
+        return taskManager.listSnapshots();
     }
 
     @GetMapping("/{taskId}")
     public TaskSnapshot getTask(@PathVariable String taskId) {
-        return null;
+        return requireTask(taskId).snapshot();
     }
 
     @PostMapping("/{taskId}/batches")
-    public TaskSnapshot submitBatch(@PathVariable String taskId, @RequestBody ReadBatch batch) {
-        return null;
+    public ResponseEntity<BatchReceipt> submitBatch(@PathVariable String taskId,
+                                                    @RequestBody ReadBatch batch) {
+        ReadValidation.validate(batch);
+        AssemblyTask task = requireTask(taskId);
+        BatchReceipt receipt = task.submitBatch(batch);
+        return ResponseEntity.status(receipt.duplicate() ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(receipt);
     }
 
     @PostMapping("/{taskId}/assemble")
     public TaskSnapshot assemble(@PathVariable String taskId) {
-        return null;
+        return requireTaskIdFound(taskId).assemble();
     }
 
     @GetMapping("/{taskId}/result")
     public ResponseEntity<AssemblyResult> getResult(@PathVariable String taskId) {
-        return null;
+        AssemblyTask task = requireTaskIdFound(taskId);
+        if (!task.isCompleted()) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), "not_completed",
+                    "assembly result is not available; state=" + task.snapshot().state());
+        }
+        return ResponseEntity.ok(task.getResult());
     }
 
-    static Map<String, String> errorBody(String message) {
-        return Map.of("error", message);
+    private AssemblyTask requireTask(String taskId) {
+        if (!taskManager.exists(taskId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND.value(), "task_not_found",
+                    "task not found: " + taskId);
+        }
+        return taskManager.getTask(taskId);
+    }
+
+    private AssemblyTask requireTaskIdFound(String taskId) {
+        return requireTask(taskId);
     }
 }

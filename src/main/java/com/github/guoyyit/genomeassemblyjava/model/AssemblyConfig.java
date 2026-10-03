@@ -15,6 +15,26 @@ public record AssemblyConfig(int kmerSize,
                              int qualityTrimThreshold,
                              int minReadLength) {
 
+    public AssemblyConfig {
+        if (kmerSize < 3 || kmerSize > 31) {
+            throw new IllegalArgumentException("kmerSize must be within 3..31: " + kmerSize);
+        }
+        if (minCoverage < 1 || minCoverage > 1_000_000) {
+            throw new IllegalArgumentException("minCoverage must be within 1..1000000: " + minCoverage);
+        }
+        if (maxTipLength < 0 || maxTipLength > 1_000_000) {
+            throw new IllegalArgumentException("maxTipLength must be within 0..1000000: " + maxTipLength);
+        }
+        if (qualityTrimThreshold < 0 || qualityTrimThreshold > 93) {
+            throw new IllegalArgumentException(
+                    "qualityTrimThreshold must be within 0..93: " + qualityTrimThreshold);
+        }
+        if (minReadLength < kmerSize || minReadLength > 1_000_000) {
+            throw new IllegalArgumentException(
+                    "minReadLength must be within kmerSize..1000000: " + minReadLength);
+        }
+    }
+
     public static AssemblyConfig defaults() {
         return new AssemblyConfig(21, 2, 42, 0, 21);
     }
